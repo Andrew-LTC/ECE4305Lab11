@@ -459,12 +459,13 @@ int moveLed(int ledIn, int ledShift, int ledAmt, bool ledDir){
 void Ps2ChasingLeds(Ps2Core *ps2_p, GpoCore *led_p, SsegCore *sseg_p, int ledAmt){
 	int id;
 	char ch;
+	unsigned long last;
 
-    int speed = 0;
-    bool dir = true;
-    int ledInit = 1, ledShift = 1;
+	int speed = 0;
+	bool dir = true;
+	int ledInit = 1, ledShift = 1;
 
-	int pause = 0;
+	bool pause = false;
 
 	//Write "SP="
 	sseg_p->write_1ptn(0xb7,3);
@@ -483,86 +484,72 @@ void Ps2ChasingLeds(Ps2Core *ps2_p, GpoCore *led_p, SsegCore *sseg_p, int ledAmt
 	uart.disp(id);
 	uart.disp("\n\r");
 
-	if(id == 1){//keyboard
-		do {
-			if (ps2_p->get_kb_ch(&ch)) {
-				uart.disp(ch);
-				uart.disp(" ");
+	while(1){
+		switch(pause){
+		case false:
+			//show pause on SSEG
+			sseg_p->write_1ptn(0x8c,7);
+			sseg_p->set_dp(0x80);
 
-				//pause functionality
-				if(ch == 'p'){
-					switch(pause){
-					case 0:
-						//show pause on SSEG
-						sseg_p->write_1ptn(0x8c,7);
-						sseg_p->set_dp(0x80);
-						pause = 1;
-						break;
-					case 1:
-						//remove pause on SSEG
-						sseg_p->write_1ptn(0xff,7);
-						sseg_p->set_dp(0x00);
-						pause = 0;
-						break;
-					}
-				}
-
-				//speed functionality
-				//if F1 key pressed
-				if(ch == 0xf0){
-					//take in 3 values for speed
-					for(int i = 0; i < 3; i++){
-						//wait for user input with acceptable values
-						//**can this check be done with an array?**
-						while(ps2_p->get_kb_ch(&ch) == 0 &&
-								(ch == '0' || ch == '1' || ch == '2'
-								|| ch == '3' || ch == '4' ||ch == '5'
-								|| ch ==  '6' || ch == '7' || ch == '8'|| ch == '9')){}
-
-						//take in all 3 values of speed the first input of speed will be
-						//hundreds place second will be tens place and last will be one's place
-						speed = (speed * 10) + (ch - '0');
-					}
-					uart.disp("SPEED: ");
-					uart.disp(speed);
-					uart.disp("\n\r");
-
-					//write out speed to SSEG
-					int speed0 = (speed % 100) % 10;
-					int speed1 = (speed / 10) % 10;
-					int speed2 = speed / 100;
-					sseg_p->write_1ptn(sseg_p->h2s(speed0),0);
-					sseg_p->write_1ptn(sseg_p->h2s(speed1),1);
-					sseg_p->write_1ptn(sseg_p->h2s(speed2),2);
-				}
-
-				//Led Movement
-				while(pause && ps2_p->get_kb_ch(&ch) == 0){
-					led_p->write(1);
-//					if(ps2_p->get_kb_ch(&ch))
-//						break;
-				}
-				while(!pause && ps2_p->get_kb_ch(&ch) == 0){
-//					if(ps2_p->get_kb_ch(&ch))
-//						break;
-
-					led_p->write(moveLed(ledInit, ledShift, ledAmt, dir) & 0x0000ffff);
-					ledShift++;
-					sleep_ms(speed + 10);	//min 10 ms blink
-					led_p->write(0);
-					sleep_ms(speed + 10);
-
-					if(ledShift == ledAmt){
-						dir = !dir;
-						ledShift = 0;
-					}
-				}
+			led_p->write(1);
+			break;
+		case true:
+			//remove pause on SSEG
+			sseg_p->write_1ptn(0xff,7);
+			sseg_p->set_dp(0x00);
+			led_p->write(moveLed(ledInit, ledShift, ledAmt, dir) & 0x0000ffff);
+			ledShift++;
+			sleep_ms(speed + 5);	//min 10 ms blink
+			led_p->write(0);
+			sleep_ms(speed + 5);
+			if(ledShift == ledAmt){
+				dir = !dir;
+				ledShift = 0;
 			}
-			//check if keyboard is still plugged in
-			id = ps2_p->init();
-		}while(id == 1);
+			break;
+		}
+		if (ps2_p->get_kb_ch(&ch)) {
+			uart.disp(ch);
+			uart.disp(" ");
+
+			//pause functionality
+			if(ch == 'p'){
+				pause = !pause;
+			}
+
+			//Speed functionality
+			//if F1 key pressed
+			if(ch == 'F'){
+				uart.disp("F1 pressed");
+				uart.disp("\n\r");
+				//take in 3 values for speed
+				speed = 0;
+				for(int i = 0; i < 3; i++){
+					//wait for user input with acceptable values
+					//**can this check be done with an array?**
+					while(ps2_p->get_kb_ch(&ch) == 0 &&
+							(ch != '0' || ch != '1' || ch != '2'
+							|| ch != '3' || ch != '4' ||ch != '5'
+							|| ch !=  '6' || ch != '7' || ch != '8'|| ch != '9')){}
+
+					//take in all 3 values of speed the first input of speed will be
+					//hundreds place second will be tens place and last will be one's place
+					speed = (speed * 10) + (ch - '0');
+				}
+				uart.disp("SPEED: ");
+				uart.disp(speed);
+				uart.disp("\n\r");
+
+				//write out speed to SSEG
+				int speed0 = (speed % 100) % 10;
+				int speed1 = (speed / 10) % 10;
+				int speed2 = speed / 100;
+				sseg_p->write_1ptn(sseg_p->h2s(speed0),0);
+				sseg_p->write_1ptn(sseg_p->h2s(speed1),1);
+				sseg_p->write_1ptn(sseg_p->h2s(speed2),2);
+			}
+		}
 	}
-	uart.disp("\n\rExit\n\r");
 }
 
 GpoCore led(get_slot_addr(BRIDGE_BASE, S2_LED));
@@ -610,4 +597,3 @@ int main() {
 //      adsr_check(&adsr, &led, &sw);
    } //while
 } //main
-
